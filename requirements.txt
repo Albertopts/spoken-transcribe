@@ -1,2 +1,5 @@
 streamlit>=1.53.1
 elevenlabs>=2.31.0
+openai>=3.36.0
+pydub>=0.25.1
+audioop-lts; python_version >= "3.13"
