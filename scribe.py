@@ -6,9 +6,51 @@ Speakers are labelled "Speaker 1", "Speaker 2", ... in order of first appearance
 from typing import Optional
 
 from elevenlabs import ElevenLabs
+from elevenlabs.core.api_error import ApiError
 
 # Long recordings can take several minutes; the SDK default is 240s.
 REQUEST_TIMEOUT_SEC = 1800
+
+CREDIT_CODES = {"quota_exceeded", "insufficient_credits", "payment_required"}
+PERMISSION_CODES = {"missing_permissions", "insufficient_permissions"}
+KEY_CODES = {"invalid_api_key", "missing_api_key", "api_key_expired"}
+BUSY_CODES = {"rate_limit_exceeded", "concurrent_limit_exceeded", "too_many_concurrent_requests", "system_busy"}
+
+
+def classify_error(err: Exception) -> tuple[str, str]:
+    """
+    Map an ElevenLabs failure to (kind, message).
+
+    kind is one of: credits, permissions, key, busy, other.
+    message is ElevenLabs' own explanation when available.
+    Handles both error shapes ElevenLabs returns:
+    {"detail": {"status": ..., "message": ...}} and {"detail": {"code": ..., "message": ...}}.
+    """
+    if not isinstance(err, ApiError):
+        return "other", str(err)
+
+    body = err.body
+    detail = body.get("detail", body) if isinstance(body, dict) else body
+    if isinstance(detail, dict):
+        code = str(detail.get("code") or detail.get("status") or detail.get("error") or "").lower()
+        message = str(detail.get("message") or "")
+    else:
+        code, message = "", str(detail or "")
+    text = f"{code} {message}".lower()
+    status = err.status_code
+
+    if code in CREDIT_CODES or status == 402 or "quota" in text or "credits remaining" in text:
+        kind = "credits"
+    elif code in PERMISSION_CODES or "permission" in text:
+        kind = "permissions"
+    elif code in KEY_CODES or (status == 401 and "key" in text):
+        kind = "key"
+    elif code in BUSY_CODES or status == 429:
+        kind = "busy"
+    else:
+        kind = "other"
+
+    return kind, message or f"HTTP {status}: {body}"
 
 
 def format_speaker_turns(words) -> tuple[str, list[str]]:

@@ -13,12 +13,45 @@ from pathlib import Path
 
 import streamlit as st
 
-from scribe import transcribe_to_text
+from scribe import transcribe_to_text, classify_error
 
 SCRIBE_USD_PER_HOUR = 0.22
 AUDIO_TYPES = ["mp3", "wav", "m4a", "mp4", "aac", "flac", "ogg", "opus", "webm", "mov"]
 
+ERROR_HELP = {
+    "credits": (
+        "⛔ **Credit limit reached — this file was not transcribed.**\n\n"
+        "What to do (ElevenLabs' message below says which one applies):\n"
+        "1. **This app's key hit its limit** → elevenlabs.io → Developers → API Keys → "
+        "edit the key used by this app → raise *Per credit refresh period* "
+        "(or wait until the limit refreshes).\n"
+        "2. **Your account is out of credits** → elevenlabs.io → Subscription → "
+        "top up / turn on usage-based billing / upgrade the plan.\n\n"
+        "Then tap **Try again** — your upload is kept."
+    ),
+    "permissions": (
+        "⛔ **This app's API key isn't allowed to use Speech to Text.**\n\n"
+        "elevenlabs.io → Developers → API Keys → edit the key → set *Speech to Text* to **Access**, "
+        "then tap **Try again**."
+    ),
+    "key": (
+        "⛔ **API key rejected** (deleted, expired or mistyped).\n\n"
+        "Create a new key in elevenlabs.io → Developers → API Keys (Speech to Text only), then paste it "
+        "into this app's Streamlit **Settings → Secrets** as `ELEVENLABS_API_KEY`."
+    ),
+    "busy": "⏳ **ElevenLabs is busy right now.** Wait a minute, then tap **Try again**.",
+    "other": "⛔ **Transcription failed.**",
+}
+
 st.set_page_config(page_title="Transcribe", page_icon="🎙️", layout="centered")
+
+
+def show_error(err: Exception):
+    """Explain an ElevenLabs failure in plain words, with what to do next."""
+    kind, message = classify_error(err)
+    st.error(ERROR_HELP[kind])
+    if message:
+        st.caption(f"ElevenLabs says: {message}")
 
 
 def get_secret(name: str):
@@ -88,7 +121,8 @@ if uploaded:
         with st.spinner("Transcribing… keep this page open. Long recordings take a few minutes."):
             result = cached_transcribe(uploaded.name, uploaded.getvalue(), language, int(num_speakers))
     except Exception as e:
-        st.error(f"Transcription failed: {e}")
+        show_error(e)
+        st.button("🔁 Try again", use_container_width=True)
         st.stop()
 
     minutes = result["duration"] / 60
